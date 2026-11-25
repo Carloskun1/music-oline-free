@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppTabs from '@/components/app-tabs';
 import { ErrorBanner, ErrorScreen } from '@/components/error-screen';
 import { PlayerProvider } from '@/components/player-provider';
+import { TrackMenuProvider } from '@/components/track-menu';
 import { Colors } from '@/constants/theme';
 import { LibraryContext, useLibraryState } from '@/lib/library';
 
@@ -33,7 +34,7 @@ export default function AppRoot() {
         <StatusBar style="light" />
         <LibraryContext.Provider value={library}>
           <PlayerProvider onPlayTrack={library.addToHistory}>
-            {library.loaded ? <AppTabs /> : null}
+            <TrackMenuProvider>{library.loaded ? <AppTabs /> : null}</TrackMenuProvider>
           </PlayerProvider>
         </LibraryContext.Provider>
         <ErrorBanner onPress={() => setShowErrors(true)} />

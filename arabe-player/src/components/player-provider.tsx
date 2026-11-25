@@ -1,61 +1,57 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
-import { formatDuration, getAudioUrl, type Track } from '@/lib/api';
+import { MiniPlayer } from '@/components/mini-player';
+import { NowPlaying } from '@/components/now-playing';
+import { PlayerContext, type PlayerState, type RepeatMode } from '@/components/player-context';
+import { getAudioUrl, type Track } from '@/lib/api';
 import { logError } from '@/lib/error-log';
 
-type PlayerState = {
-  current: Track | null;
-  isPlaying: boolean;
-  loading: boolean;
-  position: number;
-  duration: number;
-  error: string | null;
-  play: (track: Track) => Promise<void>;
-  toggle: () => Promise<void>;
-  seek: (seconds: number) => Promise<void>;
-  stop: () => Promise<void>;
-};
+export { usePlayer } from '@/components/player-context';
 
-const PlayerContext = createContext<PlayerState | null>(null);
-
-export function usePlayer(): PlayerState {
-  const ctx = useContext(PlayerContext);
-  if (!ctx) throw new Error('usePlayer debe usarse dentro de PlayerProvider');
-  return ctx;
-}
-
-export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode; onPlayTrack?: (track: Track) => void }) {
-  const soundRef = useRef<AudioPlayer | null>(null);
+export function PlayerProvider({
+  children,
+  onPlayTrack,
+}: {
+  children: ReactNode;
+  onPlayTrack?: (track: Track) => void;
+}) {
+  const playerRef = useRef<AudioPlayer | null>(null);
   const subRef = useRef<{ remove: () => void } | null>(null);
+  const tokenRef = useRef(0);
+  const queueRef = useRef<Track[]>([]);
+  const indexRef = useRef(-1);
+  const historyRef = useRef<number[]>([]);
+  const positionRef = useRef(0);
+  const shuffleRef = useRef(false);
+  const repeatRef = useRef<RepeatMode>('off');
+  const endRef = useRef<() => void>(() => {});
+  const onPlayRef = useRef(onPlayTrack);
+  onPlayRef.current = onPlayTrack;
+
   const [current, setCurrent] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<Track[]>([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState<RepeatMode>('off');
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
 
   const releasePlayer = useCallback(() => {
     try {
       subRef.current?.remove();
-      soundRef.current?.pause();
-      soundRef.current?.remove();
+      playerRef.current?.pause();
+      playerRef.current?.remove();
     } catch (e) {
       logError('releasePlayer', e);
     }
     subRef.current = null;
-    soundRef.current = null;
+    playerRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -65,173 +61,235 @@ export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode;
     return () => releasePlayer();
   }, [releasePlayer]);
 
-  const play = useCallback(
-    async (track: Track) => {
-      setError(null);
-      setLoading(true);
-      setCurrent(track);
-      try {
-        releasePlayer();
-        const url = await getAudioUrl(track.id);
-        const player = createAudioPlayer({ uri: url }, { updateInterval: 500 });
-        subRef.current = player.addListener('playbackStatusUpdate', (status) => {
-          setPosition((status.currentTime ?? 0) * 1000);
-          setDuration((status.duration ?? 0) * 1000);
-          setIsPlaying(!!status.playing);
-        });
-        soundRef.current = player;
-        try {
-          player.setActiveForLockScreen(true, {
-            title: track.title,
-            artist: track.uploader,
-            artworkUrl: track.thumbnail || undefined,
-          });
-        } catch (e) {
-          logError('lockScreen', e);
-        }
-        player.play();
-        onPlayTrack?.(track);
-      } catch (e) {
-        logError('play', e);
-        setError('No se pudo cargar esta pista. Prueba otra canción.');
-        setIsPlaying(false);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [onPlayTrack, releasePlayer],
-  );
+  const setIdx = (i: number) => {
+    indexRef.current = i;
+    setQueueIndex(i);
+  };
 
-  const toggle = useCallback(async () => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    if (isPlaying) sound.pause();
-    else sound.play();
-  }, [isPlaying]);
-
-  const seek = useCallback(async (seconds: number) => {
-    await soundRef.current?.seekTo(seconds);
-  }, []);
-
-  const stop = useCallback(async () => {
+  const startTrack = async (track: Track) => {
+    const token = ++tokenRef.current;
+    setError(null);
+    setLoading(true);
+    setCurrent(track);
+    setPosition(0);
+    setDuration(track.duration);
+    positionRef.current = 0;
     releasePlayer();
-    setIsPlaying(false);
+    try {
+      const url = await getAudioUrl(track.id);
+      if (token !== tokenRef.current) return;
+      const player = createAudioPlayer({ uri: url }, { updateInterval: 500 });
+      subRef.current = player.addListener('playbackStatusUpdate', (status) => {
+        if (token !== tokenRef.current) return;
+        positionRef.current = status.currentTime ?? 0;
+        setPosition(status.currentTime ?? 0);
+        if (status.duration) setDuration(status.duration);
+        setIsPlaying(!!status.playing);
+        if (status.didJustFinish) endRef.current();
+      });
+      playerRef.current = player;
+      try {
+        player.setActiveForLockScreen(true, {
+          title: track.title,
+          artist: track.uploader,
+          artworkUrl: track.thumbnail || undefined,
+        });
+      } catch (e) {
+        logError('lockScreen', e);
+      }
+      player.play();
+      onPlayRef.current?.(track);
+    } catch (e) {
+      if (token !== tokenRef.current) return;
+      logError('play', e);
+      setError('No se pudo cargar esta pista. Prueba otra canción.');
+      setIsPlaying(false);
+    } finally {
+      if (token === tokenRef.current) setLoading(false);
+    }
+  };
+
+  const begin = (list: Track[], index: number) => {
+    queueRef.current = list;
+    historyRef.current = [];
+    setQueue(list);
+    setIdx(index);
+    return startTrack(list[index]);
+  };
+
+  const toggle = () => {
+    const p = playerRef.current;
+    if (!p) return;
+    if (p.playing) p.pause();
+    else p.play();
+  };
+
+  const play = async (track: Track, list?: Track[]) => {
+    if (current?.id === track.id && playerRef.current) {
+      toggle();
+      return;
+    }
+    let base: Track[];
+    if (list && list.some((t) => t.id === track.id)) base = list;
+    else if (!list && queueRef.current.some((t) => t.id === track.id)) base = queueRef.current;
+    else base = [track];
+    await begin(base, base.findIndex((t) => t.id === track.id));
+  };
+
+  const playAll = async (tracks: Track[], withShuffle = false) => {
+    if (tracks.length === 0) return;
+    shuffleRef.current = withShuffle;
+    setShuffle(withShuffle);
+    const start = withShuffle ? Math.floor(Math.random() * tracks.length) : 0;
+    await begin(tracks, start);
+  };
+
+  const next = (auto = false) => {
+    const q = queueRef.current;
+    if (q.length === 0) return;
+    const i = indexRef.current;
+    let ni: number;
+    if (shuffleRef.current && q.length > 1) {
+      historyRef.current.push(i);
+      do {
+        ni = Math.floor(Math.random() * q.length);
+      } while (ni === i);
+    } else {
+      ni = i + 1;
+      if (ni >= q.length) {
+        if (repeatRef.current === 'all' || !auto) {
+          ni = 0;
+        } else {
+          playerRef.current?.pause();
+          void playerRef.current?.seekTo(0);
+          return;
+        }
+      }
+    }
+    setIdx(ni);
+    void startTrack(q[ni]);
+  };
+
+  const prev = () => {
+    const q = queueRef.current;
+    if (q.length === 0) return;
+    if (positionRef.current > 3) {
+      void playerRef.current?.seekTo(0);
+      return;
+    }
+    let ni: number;
+    if (shuffleRef.current && historyRef.current.length > 0) {
+      ni = historyRef.current.pop() as number;
+    } else {
+      ni = indexRef.current - 1;
+      if (ni < 0) ni = repeatRef.current === 'all' ? q.length - 1 : 0;
+    }
+    setIdx(ni);
+    void startTrack(q[ni]);
+  };
+
+  endRef.current = () => {
+    if (repeatRef.current === 'one') {
+      void playerRef.current?.seekTo(0);
+      playerRef.current?.play();
+    } else {
+      next(true);
+    }
+  };
+
+  const seek = async (seconds: number) => {
+    await playerRef.current?.seekTo(seconds);
+  };
+
+  const stop = () => {
+    tokenRef.current++;
+    releasePlayer();
+    queueRef.current = [];
+    setQueue([]);
+    setIdx(-1);
     setCurrent(null);
+    setIsPlaying(false);
+    setLoading(false);
     setPosition(0);
     setDuration(0);
-  }, [releasePlayer]);
+    setNowPlayingOpen(false);
+  };
 
-  const value = useMemo(
-    () => ({
-      current,
-      isPlaying: isPlaying && !loading,
-      position: position / 1000,
-      duration: duration / 1000,
-      loading,
-      error,
-      play,
-      toggle,
-      seek,
-      stop,
-    }),
-    [current, isPlaying, loading, position, duration, error, play, toggle, seek, stop],
-  );
+  const toggleShuffle = () => {
+    shuffleRef.current = !shuffleRef.current;
+    setShuffle(shuffleRef.current);
+  };
+
+  const cycleRepeat = () => {
+    const nextMode: RepeatMode = repeatRef.current === 'off' ? 'all' : repeatRef.current === 'all' ? 'one' : 'off';
+    repeatRef.current = nextMode;
+    setRepeat(nextMode);
+  };
+
+  const addToQueue = (track: Track) => {
+    if (!current) {
+      void play(track);
+      return;
+    }
+    if (queueRef.current.some((t) => t.id === track.id)) return;
+    const q = [...queueRef.current, track];
+    queueRef.current = q;
+    setQueue(q);
+  };
+
+  const playNext = (track: Track) => {
+    if (!current) {
+      void play(track);
+      return;
+    }
+    if (track.id === current.id) return;
+    const q = [...queueRef.current];
+    let idx = indexRef.current;
+    const existing = q.findIndex((t) => t.id === track.id);
+    if (existing !== -1) {
+      q.splice(existing, 1);
+      if (existing < idx) idx -= 1;
+    }
+    q.splice(idx + 1, 0, track);
+    queueRef.current = q;
+    setQueue(q);
+    setIdx(idx);
+  };
+
+  const value: PlayerState = {
+    current,
+    isPlaying: isPlaying && !loading,
+    loading,
+    position,
+    duration,
+    error,
+    queue,
+    queueIndex,
+    shuffle,
+    repeat,
+    nowPlayingOpen,
+    play,
+    playAll,
+    toggle,
+    seek,
+    next: () => next(false),
+    prev,
+    stop,
+    toggleShuffle,
+    cycleRepeat,
+    addToQueue,
+    playNext,
+    openNowPlaying: () => setNowPlayingOpen(true),
+    closeNowPlaying: () => setNowPlayingOpen(false),
+  };
 
   return (
     <PlayerContext.Provider value={value}>
       <View style={styles.fill}>{children}</View>
       <MiniPlayer />
+      <NowPlaying />
     </PlayerContext.Provider>
   );
 }
-export function MiniPlayer() {
-  const { current, isPlaying, loading, toggle, stop, position, duration, error } = usePlayer();
-  if (!current) return null;
-  const progress = duration > 0 ? Math.min(position / duration, 1) : 0;
 
-  return (
-    <View style={styles.mini}>
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { flex: progress }]} />
-        <View style={[styles.progressRest, { flex: 1 - progress }]} />
-      </View>
-      {current.thumbnail ? (
-        <Image source={{ uri: current.thumbnail }} style={styles.miniArt} />
-      ) : (
-        <View style={[styles.miniArt, styles.miniArtPlaceholder]} />
-      )}
-      <View style={styles.miniInfo}>
-        <Text numberOfLines={1} style={styles.miniTitle}>
-          {current.title}
-        </Text>
-        <Text numberOfLines={1} style={styles.miniArtist}>
-          {current.uploader} · {formatDuration(current.duration)}
-        </Text>
-      </View>
-      {loading ? (
-        <ActivityIndicator color={Colors.dark.accent} style={styles.miniBtn} />
-      ) : (
-        <Pressable
-          accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
-          onPress={() => void toggle()}
-          style={({ pressed }) => [styles.miniBtn, pressed && { opacity: 0.7 }]}>
-          <Text style={styles.miniBtnText}>{isPlaying ? '⏸' : '▶'}</Text>
-        </Pressable>
-      )}
-      <Pressable
-        accessibilityLabel="Cerrar reproductor"
-        onPress={() => void stop()}
-        style={({ pressed }) => [styles.miniBtn, pressed && { opacity: 0.7 }]}>
-        <Text style={[styles.miniBtnText, { color: Colors.dark.textSecondary }]}>✕</Text>
-      </Pressable>
-      {error ? (
-        <Text numberOfLines={1} style={styles.miniError}>
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  fill: { flex: 1 },
-  mini: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: Colors.dark.backgroundElement,
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
-    paddingBottom: Spacing.three,
-  },
-  progressBar: {
-    position: 'absolute',
-    top: -1,
-    left: 0,
-    right: 0,
-    height: 2,
-    flexDirection: 'row',
-  },
-  progressFill: { backgroundColor: Colors.dark.accent },
-  progressRest: { backgroundColor: Colors.dark.border },
-  miniArt: { width: 44, height: 44, borderRadius: Radius.md, backgroundColor: Colors.dark.backgroundSelected },
-  miniArtPlaceholder: {},
-  miniInfo: { flex: 1, minWidth: 0 },
-  miniTitle: { color: Colors.dark.text, fontSize: 14, fontWeight: '600' },
-  miniArtist: { color: Colors.dark.textSecondary, fontSize: 12, marginTop: 2 },
-  miniBtn: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center' },
-  miniBtnText: { color: Colors.dark.heading, fontSize: 22 },
-  miniError: {
-    position: 'absolute',
-    bottom: 0,
-    left: Spacing.three,
-    color: Colors.dark.danger,
-    fontSize: 10,
-  },
-});
+const styles = StyleSheet.create({ fill: { flex: 1 } });

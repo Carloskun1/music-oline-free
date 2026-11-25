@@ -83,6 +83,15 @@ export function useLibraryState() {
     });
   };
 
+  const deletePlaylist = (name: string) => {
+    setPlaylists((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      void persist(KEY_PLAYLISTS, next);
+      return next;
+    });
+  };
+
   const removeFromPlaylist = (name: string, trackId: string) => {
     setPlaylists((prev) => {
       const next = { ...prev, [name]: (prev[name] ?? []).filter((t) => t.id !== trackId) };
@@ -103,6 +112,7 @@ export function useLibraryState() {
     addToHistory,
     addToPlaylist,
     createPlaylist,
+    deletePlaylist,
     removeFromPlaylist,
   };
 }
