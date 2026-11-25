@@ -1,9 +1,6 @@
-// Cliente real de Piped (API pública de YouTube Music) con respaldo de instancias.
-const INSTANCES = [
-  'https://api.piped.private.coffee',
-  'https://pipedapi.adminforge.de',
-  'https://pipedapi.kavin.rocks',
-];
+// Cliente de Audius (API pública y gratuita de música). Reemplaza a Piped, que devolvía HTTP 403.
+const APP_NAME = 'arabe-player';
+const FALLBACK_HOSTS = ['https://api.audius.co', 'https://discoveryprovider.audius.co'];
 
 export type Track = {
   id: string;
@@ -13,83 +10,74 @@ export type Track = {
   thumbnail: string;
 };
 
-type PipedItem = {
-  url?: string;
+type AudiusTrack = {
+  id?: string;
   title?: string;
-  uploaderName?: string;
   duration?: number;
-  thumbnail?: string;
+  is_streamable?: boolean;
+  artwork?: { '150x150'?: string; '480x480'?: string; '1000x1000'?: string } | null;
+  user?: { name?: string; handle?: string };
 };
 
-type PipedSearch = { items?: PipedItem[] };
+let hostsCache: string[] | null = null;
 
-type PipedStream = {
-  audioStreams?: { url: string; bitrate: number; mimeType: string; format?: string }[];
-  title?: string;
-  uploader?: string;
-  duration?: number;
-  thumbnailUrl?: string;
-};
+async function getHosts(): Promise<string[]> {
+  if (hostsCache) return hostsCache;
+  let discovered: string[] = [];
+  try {
+    const res = await fetch('https://api.audius.co');
+    if (res.ok) {
+      const json = (await res.json()) as { data?: string[] };
+      discovered = (json.data ?? []).filter((h) => typeof h === 'string').slice(0, 4);
+    }
+  } catch {
+    // seguimos con los hosts de respaldo
+  }
+  hostsCache = [...FALLBACK_HOSTS, ...discovered];
+  return hostsCache;
+}
 
-function toTrack(item: PipedItem): Track | null {
-  const id = item.url?.split('v=')[1] ?? item.url?.split('/watch?v=')[1];
-  if (!id || !item.title) return null;
+async function audiusFetch<T>(path: string): Promise<{ data: T; host: string }> {
+  const sep = path.includes('?') ? '&' : '?';
+  const errors: string[] = [];
+  for (const host of await getHosts()) {
+    try {
+      const res = await fetch(`${host}/v1${path}${sep}app_name=${APP_NAME}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { data: T };
+      return { data: json.data, host };
+    } catch (err) {
+      errors.push(`${host}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  throw new Error(`Audius no respondió. ${errors.join(' | ')}`);
+}
+
+function toTrack(t: AudiusTrack): Track | null {
+  if (!t.id || !t.title || t.is_streamable === false) return null;
   return {
-    id,
-    title: item.title,
-    uploader: item.uploaderName ?? '',
-    duration: item.duration ?? 0,
-    thumbnail: item.thumbnail ?? '',
+    id: t.id,
+    title: t.title,
+    uploader: t.user?.name ?? t.user?.handle ?? '',
+    duration: t.duration ?? 0,
+    thumbnail: t.artwork?.['480x480'] ?? t.artwork?.['150x150'] ?? '',
   };
 }
 
-async function pipedFetch<T>(path: string): Promise<T> {
-  let lastError: unknown;
-  for (const base of INSTANCES) {
-    try {
-      return await pipedFetchFrom<T>(base, path);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('Sin conexión con ninguna instancia');
-}
-
 export async function searchTracks(query: string): Promise<Track[]> {
-  const data = await pipedFetch<PipedSearch>(
-    `/search?q=${encodeURIComponent(query)}&filter=music_songs`,
-  );
-  return (data.items ?? []).map(toTrack).filter((t): t is Track => t !== null);
+  const { data } = await audiusFetch<AudiusTrack[]>(`/tracks/search?query=${encodeURIComponent(query)}&limit=30`);
+  return (data ?? []).map(toTrack).filter((t): t is Track => t !== null);
 }
 
-export async function getTrending(region = 'MX'): Promise<Track[]> {
-  const data = await pipedFetch<PipedItem[] | { items?: PipedItem[] }>(`/trending?region=${region}`);
-  const items = Array.isArray(data) ? data : (data.items ?? []);
-  return items.map(toTrack).filter((t): t is Track => t !== null);
+export async function getTrending(_region?: string): Promise<Track[]> {
+  const { data } = await audiusFetch<AudiusTrack[]>('/tracks/trending?limit=30');
+  return (data ?? []).map(toTrack).filter((t): t is Track => t !== null);
 }
 
+// Audius sirve el MP3 directo (con redirección) desde esta URL.
 export async function getAudioUrl(id: string): Promise<string> {
-  let lastError: unknown;
-  for (const base of INSTANCES) {
-    try {
-      const data = await pipedFetchFrom(base, `/streams/${id}`) as PipedStream;
-      const audio = (data.audioStreams ?? [])
-        .filter((s) => s.mimeType.startsWith('audio/') && s.url)
-        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-      if (audio.length > 0) return audio[0].url;
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('Ninguna instancia pudo servir el audio de esta pista ahora mismo');
-}
-
-async function pipedFetchFrom<T>(base: string, path: string): Promise<T> {
-  const res = await fetch(`${base}${path}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as T;
+  const hosts = await getHosts();
+  return `${hosts[0]}/v1/tracks/${id}/stream?app_name=${APP_NAME}`;
 }
 
 export function formatDuration(seconds: number): string {
