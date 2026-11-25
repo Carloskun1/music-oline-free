@@ -41,7 +41,11 @@
             "enableShrinkResourcesInReleaseBuilds": false
           }
         }
-      ]
+      ],
+      "expo-audio",
+      {
+        "enableBackgroundPlayback": true
+      }
     ],
     "experiments": {
       "typedRoutes": true,

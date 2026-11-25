@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import {
   createContext,
   useCallback,
@@ -35,7 +35,8 @@ export function usePlayer(): PlayerState {
   return ctx;
 }
 
-export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode; onPlayTrack?: (track: Track) => void }) {  const soundRef = useRef<Audio.Sound | null>(null);
+export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode; onPlayTrack?: (track: Track) => void }) {
+  const playerRef = useRef<AudioPlayer | null>(null);
   const [current, setCurrent] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,9 +45,10 @@ export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
     return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
+      playerRef.current?.release();
+      playerRef.current = null;
     };
   }, []);
 
@@ -54,26 +56,25 @@ export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode;
     async (track: Track) => {
       setError(null);
       setLoading(true);
+      setIsPlaying(false);
+      setPosition(0);
+      setDuration(0);
       setCurrent(track);
       try {
-        soundRef.current?.unloadAsync().catch(() => {});
-        soundRef.current = null;
+        playerRef.current?.release();
+        playerRef.current = null;
         const url = await getAudioUrl(track.id);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: url },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-          (status) => {
-            if (!status.isLoaded) return;
-            setPosition(status.positionMillis ?? 0);
-            setDuration(status.durationMillis ?? 0);
-            setIsPlaying(status.isPlaying);
-          },
-          true,
-        );
-        soundRef.current = sound;
+        const player = createAudioPlayer({ uri: url });
+        playerRef.current = player;
+        player.addListener('playbackStatusUpdate', (status) => {
+          setPosition(status.currentTime ?? 0);
+          setDuration(status.duration ?? 0);
+          setIsPlaying(Boolean(status.playing));
+        });
+        player.play();
         onPlayTrack?.(track);
       } catch {
-        setError('No se pudo cargar esta pista. Reintentando con otra fuente no es posible aquí; prueba otra canción.');
+        setError('No se pudo cargar esta pista. Prueba con otra canción.');
         setIsPlaying(false);
       } finally {
         setLoading(false);
@@ -83,30 +84,31 @@ export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode;
   );
 
   const toggle = useCallback(async () => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    if (isPlaying) await sound.pauseAsync();
-    else await sound.playAsync();
-  }, [isPlaying]);
+    const player = playerRef.current;
+    if (!player) return;
+    if (player.playing) player.pause();
+    else player.play();
+  }, []);
 
   const seek = useCallback(async (seconds: number) => {
-    await soundRef.current?.setPositionAsync(seconds * 1000);
+    await playerRef.current?.seekTo(seconds);
   }, []);
 
   const stop = useCallback(async () => {
-    await soundRef.current?.unloadAsync().catch(() => {});
-    soundRef.current = null;
+    playerRef.current?.release();
+    playerRef.current = null;
     setCurrent(null);
     setPosition(0);
     setDuration(0);
+    setIsPlaying(false);
   }, []);
 
   const value = useMemo(
     () => ({
       current,
       isPlaying: isPlaying && !loading,
-      position: position / 1000,
-      duration: duration / 1000,
+      position,
+      duration,
       loading,
       error,
       play,

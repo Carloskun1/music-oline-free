@@ -28,6 +28,8 @@ export function useLibraryState() {
         if (fav) setFavorites(JSON.parse(fav));
         if (hist) setHistory(JSON.parse(hist));
         if (lists) setPlaylists(JSON.parse(lists));
+      } catch {
+        // Si el almacenamiento falla, la app arranca con la biblioteca vacía.
       } finally {
         setLoaded(true);
       }
