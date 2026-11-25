@@ -13,6 +13,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'rea
 
 import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { formatDuration, getAudioUrl, type Track } from '@/lib/api';
+import { logError } from '@/lib/error-log';
 
 type PlayerState = {
   current: Track | null;
@@ -36,7 +37,8 @@ export function usePlayer(): PlayerState {
 }
 
 export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode; onPlayTrack?: (track: Track) => void }) {
-  const playerRef = useRef<AudioPlayer | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const subRef = useRef<{ remove: () => void } | null>(null);
   const [current, setCurrent] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,71 +46,87 @@ export function PlayerProvider({ children, onPlayTrack }: { children: ReactNode;
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
-    return () => {
-      playerRef.current?.release();
-      playerRef.current = null;
-    };
+  const releasePlayer = useCallback(() => {
+    try {
+      subRef.current?.remove();
+      soundRef.current?.pause();
+      soundRef.current?.remove();
+    } catch (e) {
+      logError('releasePlayer', e);
+    }
+    subRef.current = null;
+    soundRef.current = null;
   }, []);
+
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true }).catch((e) =>
+      logError('setAudioMode', e),
+    );
+    return () => releasePlayer();
+  }, [releasePlayer]);
 
   const play = useCallback(
     async (track: Track) => {
       setError(null);
       setLoading(true);
-      setIsPlaying(false);
-      setPosition(0);
-      setDuration(0);
       setCurrent(track);
       try {
-        playerRef.current?.release();
-        playerRef.current = null;
+        releasePlayer();
         const url = await getAudioUrl(track.id);
-        const player = createAudioPlayer({ uri: url });
-        playerRef.current = player;
-        player.addListener('playbackStatusUpdate', (status) => {
-          setPosition(status.currentTime ?? 0);
-          setDuration(status.duration ?? 0);
-          setIsPlaying(Boolean(status.playing));
+        const player = createAudioPlayer({ uri: url }, { updateInterval: 500 });
+        subRef.current = player.addListener('playbackStatusUpdate', (status) => {
+          setPosition((status.currentTime ?? 0) * 1000);
+          setDuration((status.duration ?? 0) * 1000);
+          setIsPlaying(!!status.playing);
         });
+        soundRef.current = player;
+        try {
+          player.setActiveForLockScreen(true, {
+            title: track.title,
+            artist: track.uploader,
+            artworkUrl: track.thumbnail || undefined,
+          });
+        } catch (e) {
+          logError('lockScreen', e);
+        }
         player.play();
         onPlayTrack?.(track);
-      } catch {
-        setError('No se pudo cargar esta pista. Prueba con otra canción.');
+      } catch (e) {
+        logError('play', e);
+        setError('No se pudo cargar esta pista. Prueba otra canción.');
         setIsPlaying(false);
       } finally {
         setLoading(false);
       }
     },
-    [onPlayTrack],
+    [onPlayTrack, releasePlayer],
   );
 
   const toggle = useCallback(async () => {
-    const player = playerRef.current;
-    if (!player) return;
-    if (player.playing) player.pause();
-    else player.play();
-  }, []);
+    const sound = soundRef.current;
+    if (!sound) return;
+    if (isPlaying) sound.pause();
+    else sound.play();
+  }, [isPlaying]);
 
   const seek = useCallback(async (seconds: number) => {
-    await playerRef.current?.seekTo(seconds);
+    await soundRef.current?.seekTo(seconds);
   }, []);
 
   const stop = useCallback(async () => {
-    playerRef.current?.release();
-    playerRef.current = null;
+    releasePlayer();
+    setIsPlaying(false);
     setCurrent(null);
     setPosition(0);
     setDuration(0);
-    setIsPlaying(false);
-  }, []);
+  }, [releasePlayer]);
 
   const value = useMemo(
     () => ({
       current,
       isPlaying: isPlaying && !loading,
-      position,
-      duration,
+      position: position / 1000,
+      duration: duration / 1000,
       loading,
       error,
       play,

@@ -22,11 +22,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: arabe-player/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm install --legacy-peer-deps
+          npx expo install expo-audio expo-sqlite -- --legacy-peer-deps
+          npx expo install --fix -- --legacy-peer-deps
 
       - name: Generate native Android project
         run: npx expo prebuild -p android --no-install

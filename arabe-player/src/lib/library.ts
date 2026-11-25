@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 
 import type { Track } from '@/lib/api';
+import { logError } from '@/lib/error-log';
 
 const KEY_FAVORITES = 'arabeplayer.favorites';
 const KEY_HISTORY = 'arabeplayer.history';
@@ -18,7 +19,7 @@ export function useLibraryState() {
     (async () => {
       try {
         const AsyncStorage = (
-          await import('@react-native-async-storage/async-storage')
+          await import('expo-sqlite/kv-store')
         ).default;
         const [fav, hist, lists] = await Promise.all([
           AsyncStorage.getItem(KEY_FAVORITES),
@@ -28,8 +29,8 @@ export function useLibraryState() {
         if (fav) setFavorites(JSON.parse(fav));
         if (hist) setHistory(JSON.parse(hist));
         if (lists) setPlaylists(JSON.parse(lists));
-      } catch {
-        // Si el almacenamiento falla, la app arranca con la biblioteca vacía.
+      } catch (e) {
+        logError('biblioteca (AsyncStorage)', e);
       } finally {
         setLoaded(true);
       }
@@ -37,8 +38,12 @@ export function useLibraryState() {
   }, []);
 
   const persist = async (key: string, value: unknown) => {
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    try {
+      const AsyncStorage = (await import('expo-sqlite/kv-store')).default;
+      await AsyncStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      logError('guardar biblioteca', e);
+    }
   };
 
   const toggleFavorite = (track: Track) => {

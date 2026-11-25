@@ -1,37 +1,42 @@
-import { DarkTheme, ThemeProvider } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Component, type ComponentType, type ReactNode } from 'react';
 
-import AppTabs from '@/components/app-tabs';
-import { PlayerProvider } from '@/components/player-provider';
-import { Colors } from '@/constants/theme';
-import { LibraryContext, useLibraryState } from '@/lib/library';
+import { ErrorScreen } from '@/components/error-screen';
+import { installGlobalErrorHandlers, logError } from '@/lib/error-log';
 
-const navTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: Colors.dark.background,
-    card: Colors.dark.backgroundElement,
-    primary: Colors.dark.accent,
-    text: Colors.dark.text,
-    border: Colors.dark.border,
-  },
-};
+// 1) Instalar el detector antes que cualquier otra cosa.
+installGlobalErrorHandlers();
 
-export default function RootLayout() {
-  const library = useLibraryState();
-  return (
-    <SafeAreaProvider>
-      <ThemeProvider value={navTheme}>
-        <StatusBar style="light" />
-        <LibraryContext.Provider value={library}>
-          <PlayerProvider onPlayTrack={library.addToHistory}>
-            {library.loaded ? <AppTabs /> : null}
-          </PlayerProvider>
-        </LibraryContext.Provider>
-      </ThemeProvider>
-    </SafeAreaProvider>
-  );
+// 2) Cargar la app "a mano": si un módulo nativo falla al importarse
+//    (la causa típica de que la app se cierre al abrir), lo capturamos y lo mostramos.
+let Root: ComponentType | null = null;
+try {
+  Root = require('../components/app-root').default;
+} catch (e) {
+  logError('arranque (import)', e, true);
 }
 
+// 3) Si algo falla al dibujar pantallas, mostrar el error en vez de cerrar.
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    logError('render', error, true);
+  }
+  render() {
+    if (this.state.failed) {
+      return <ErrorScreen title="La app falló al abrir" onClose={() => this.setState({ failed: false })} />;
+    }
+    return this.props.children;
+  }
+}
+
+export default function RootLayout() {
+  if (!Root) return <ErrorScreen title="La app falló al arrancar" />;
+  return (
+    <Boundary>
+      <Root />
+    </Boundary>
+  );
+}
