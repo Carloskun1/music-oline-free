@@ -33,6 +33,7 @@ export function PlayerProvider({
   const ytRef = useRef<YoutubeIframeRef | null>(null);
   const engineRef = useRef<'audio' | 'yt' | null>(null);
   const loadingRef = useRef(false);
+  const skipRef = useRef(0);
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const onPlayRef = useRef(onPlayTrack);
@@ -317,6 +318,8 @@ export function PlayerProvider({
 
   const onYtState = (state: string) => {
     if (state === 'playing') {
+      skipRef.current = 0;
+      setError(null);
       setIsPlaying(true);
       setYtPlay(true);
       setLoading(false);
@@ -334,9 +337,14 @@ export function PlayerProvider({
   };
 
   const onYtError = (e: string) => {
-    logError('youtube (reproductor)', new Error(e));
     setLoading(false);
     setIsPlaying(false);
+    // 100/101/150/152/153: el dueño del video no permite reproducirlo fuera de YouTube.
+    if (['100', '101', '150', '152', '153'].includes(e)) {
+      setError('Este video no permite reproducirse fuera de YouTube.');
+      return;
+    }
+    logError('youtube (reproductor)', new Error(e));
     setError('Este video no se puede reproducir aquí. Prueba otra canción.');
   };
 

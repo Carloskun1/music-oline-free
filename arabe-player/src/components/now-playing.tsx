@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
+  Linking,
   FlatList,
   Image,
   Pressable,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 import { usePlayer } from '@/components/player-context';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -32,6 +34,7 @@ export function NowPlaying() {
   const [drag, setDrag] = useState<number | null>(null);
   const dragRef = useRef<number | null>(null);
   const [showQueue, setShowQueue] = useState(false);
+  const [site, setSite] = useState(false);
 
   const open = p.nowPlayingOpen;
   const close = p.closeNowPlaying;
@@ -129,6 +132,18 @@ export function NowPlaying() {
           </Pressable>
         </View>
         {p.error ? <Text style={styles.error}>{p.error}</Text> : null}
+        {p.error && isYt ? (
+          <View style={styles.errActions}>
+            <Pressable onPress={() => setSite(true)} style={styles.errBtn}>
+              <Text style={styles.errBtnText}>Ver en YouTube aquí</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void Linking.openURL(`https://www.youtube.com/watch?v=${track.id}`)}
+              style={[styles.errBtn, { backgroundColor: Colors.dark.backgroundSelected }]}>
+              <Text style={styles.errBtnText}>Abrir app de YouTube ↗</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View
           style={styles.seekArea}
@@ -185,12 +200,32 @@ export function NowPlaying() {
           <Text style={styles.queueText}>{showQueue ? 'Ver portada' : `Cola (${upcoming.length})`}</Text>
         </Pressable>
       </View>
+      {site ? (
+        <View style={[styles.site, { paddingTop: insets.top }]}>
+          <View style={styles.siteHeader}>
+            <Text numberOfLines={1} style={styles.siteTitle}>
+              {track.title}
+            </Text>
+            <Pressable onPress={() => setSite(false)} style={styles.headerBtn} accessibilityLabel="Cerrar YouTube">
+              <Text style={[styles.headerIcon, { fontSize: 20 }]}>✕</Text>
+            </Pressable>
+          </View>
+          <WebView
+            source={{ uri: `https://m.youtube.com/watch?v=${track.id}` }}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            style={{ flex: 1, backgroundColor: '#000' }}
+          />
+        </View>
+      ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
+  screen: { ...StyleSheet.absoluteFillObject, zIndex: 50, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
   ytHint: { color: Colors.dark.textSecondary, fontSize: 11, textAlign: 'center', marginTop: Spacing.two },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.three },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -202,6 +237,12 @@ const styles = StyleSheet.create({
   artist: { color: Colors.dark.textSecondary, fontSize: 15, marginTop: 2 },
   heart: { color: Colors.dark.text, fontSize: 28 },
   error: { color: Colors.dark.danger, fontSize: 12, marginTop: 4 },
+  errActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
+  errBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.dark.accent },
+  errBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  site: { ...StyleSheet.absoluteFillObject, zIndex: 120, backgroundColor: '#000' },
+  siteHeader: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: Colors.dark.background },
+  siteTitle: { flex: 1, color: Colors.dark.text, fontWeight: '700' },
   seekArea: { height: 32, justifyContent: 'center', marginTop: Spacing.three },
   seekTrack: { height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, flexDirection: 'row', overflow: 'hidden' },
   knob: { position: 'absolute', width: 14, height: 14, borderRadius: 7, backgroundColor: '#fff', marginLeft: -7, top: 9 },
