@@ -31,9 +31,8 @@ jobs:
           npx expo install expo-audio expo-sqlite react-native-webview -- --legacy-peer-deps
           npx expo install --fix -- --legacy-peer-deps
 
-      - name: Revisar tipos (informativo)
-        continue-on-error: true
-        run: npx tsc --noEmit 2>&1 | head -40
+      - name: Revisar tipos
+        run: npx tsc --noEmit
 
       - name: Revisar paquete JS (muestra el error real en pocos segundos)
         run: |

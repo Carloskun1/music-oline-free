@@ -2,8 +2,9 @@
 // La clave llega por el secreto de GitHub YOUTUBE_API_KEY (ver .github/workflows/main.yml).
 import type { Track } from '@/lib/api';
 
-// Si existe el secreto de GitHub se usa ese; si no, la clave de respaldo escrita aquí.
-const KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY || 'AIzaSyB50ww-iqQ0GuD_T8UBPXKdXpuvus3NBFE';
+// La clave llega por el secreto de GitHub YOUTUBE_API_KEY (env EXPO_PUBLIC_YOUTUBE_API_KEY en el workflow).
+// Sin clave, la app usa Audius como fuente de respaldo.
+const KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY ?? '';
 export const hasYoutubeKey = KEY.length > 0;
 
 const cache = new Map<string, { at: number; tracks: Track[] }>();
