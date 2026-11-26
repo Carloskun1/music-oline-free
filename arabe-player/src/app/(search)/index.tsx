@@ -34,7 +34,7 @@ export default function SearchScreen() {
             setError(null);
           }
         })
-        .catch(() => !cancelled && setError('La búsqueda falló. Prueba de nuevo en un momento.'))
+        .catch((e) => !cancelled && setError(`La búsqueda falló. ${e instanceof Error ? e.message : ''}`))
         .finally(() => !cancelled && setLoading(false));
     }, 450);
     return () => {
