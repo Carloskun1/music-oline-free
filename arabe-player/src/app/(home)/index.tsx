@@ -29,7 +29,7 @@ export default function HomeScreen() {
     setError(null);
     getTrending()
       .then(setTracks)
-      .catch(() => setError('No se pudo cargar la música. Revisa tu conexión.'))
+      .catch((e) => setError(`No se pudo cargar la música. ${e instanceof Error ? e.message : ''}`))
       .finally(() => setLoading(false));
   }, []);
 
