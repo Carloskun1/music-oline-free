@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Image,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +17,12 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatDuration } from '@/lib/api';
 import { useLibrary } from '@/lib/library';
 
+// Posición del video de YouTube cuando se ve en la pantalla de reproducción.
+export function ytBoxRect(screenWidth: number, topInset: number) {
+  const art = Math.min(screenWidth - 48, 360);
+  return { width: art, height: Math.max(200, Math.round(art * 0.5625)), left: (screenWidth - art) / 2, top: topInset + 8 + 44 + 16 };
+}
+
 export function NowPlaying() {
   const p = usePlayer();
   const library = useLibrary();
@@ -27,8 +33,21 @@ export function NowPlaying() {
   const dragRef = useRef<number | null>(null);
   const [showQueue, setShowQueue] = useState(false);
 
+  const open = p.nowPlayingOpen;
+  const close = p.closeNowPlaying;
+  useEffect(() => {
+    if (!open) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      close();
+      return true;
+    });
+    return () => sub.remove();
+  }, [open, close]);
+
   const track = p.current;
-  if (!track) return null;
+  if (!track || !open) return null;
+  const isYt = track.source === 'youtube';
+  const slot = ytBoxRect(width, 0);
   const dur = p.duration > 0 ? p.duration : track.duration;
   const shown = drag ?? p.position;
   const frac = dur > 0 ? Math.min(Math.max(shown / dur, 0), 1) : 0;
@@ -43,7 +62,7 @@ export function NowPlaying() {
   const upcoming = p.queue.slice(p.queueIndex + 1);
 
   return (
-    <Modal visible={p.nowPlayingOpen} animationType="slide" onRequestClose={p.closeNowPlaying} statusBarTranslucent>
+    <>
       <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.header}>
           <Pressable onPress={p.closeNowPlaying} style={styles.headerBtn} accessibilityLabel="Cerrar">
@@ -79,6 +98,11 @@ export function NowPlaying() {
               </Pressable>
             )}
           />
+        ) : isYt ? (
+          <View style={[styles.artWrap, { justifyContent: 'flex-start' }]}>
+            <View style={{ width: slot.width, height: slot.height }} />
+            <Text style={styles.ytHint}>Reproductor oficial de YouTube. La música se pausa si sales de la app.</Text>
+          </View>
         ) : (
           <View style={styles.artWrap}>
             {track.thumbnail ? (
@@ -161,12 +185,13 @@ export function NowPlaying() {
           <Text style={styles.queueText}>{showQueue ? 'Ver portada' : `Cola (${upcoming.length})`}</Text>
         </Pressable>
       </View>
-    </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
+  screen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
+  ytHint: { color: Colors.dark.textSecondary, fontSize: 11, textAlign: 'center', marginTop: Spacing.two },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.three },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerIcon: { color: Colors.dark.text, fontSize: 28 },
