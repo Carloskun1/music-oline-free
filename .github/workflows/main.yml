@@ -46,10 +46,11 @@ jobs:
       - name: Probar empaquetado como lo hace Gradle
         continue-on-error: true
         run: |
-          set -o pipefail
           npx expo export:embed --platform android --dev false --minify true --reset-cache \
             --entry-file node_modules/expo-router/entry.js \
-            --bundle-output /tmp/index.android.bundle --assets-dest /tmp/res 2>&1 | tail -80
+            --bundle-output /tmp/index.android.bundle --assets-dest /tmp/res > /tmp/probe.log 2>&1
+          echo "probe exit code: $?" >> /tmp/probe.log
+          tail -80 /tmp/probe.log
 
       - name: Build release APK
         run: |
@@ -61,8 +62,19 @@ jobs:
       - name: Mostrar el error real
         if: failure()
         run: |
-          echo "=== Líneas con error ==="
-          grep -n -i -E "error|unable to resolve|syntaxerror|bundling failed|hermes|cannot find|failed" /tmp/gradle.log | grep -v -E "^[0-9]+:w: |deprecated" | head -60
+          {
+            echo "## Error real del empaquetado"
+            echo "### Prueba aparte (final)"
+            echo '```'
+            tail -40 /tmp/probe.log | cut -c1-300
+            echo '```'
+            echo "### Gradle (antes de FAILURE)"
+            echo '```'
+            grep -v '^w: ' /tmp/gradle.log | grep -B45 'FAILURE: Build failed' | head -70 | cut -c1-300
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          MSG=$(tail -25 /tmp/probe.log | cut -c1-250 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Error real (prueba aparte)::$MSG"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
