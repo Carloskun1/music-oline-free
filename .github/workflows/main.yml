@@ -43,11 +43,26 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild -p android --no-install
 
+      - name: Probar empaquetado como lo hace Gradle
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx expo export:embed --platform android --dev false --minify true --reset-cache \
+            --entry-file node_modules/expo-router/entry.js \
+            --bundle-output /tmp/index.android.bundle --assets-dest /tmp/res 2>&1 | tail -80
+
       - name: Build release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      - name: Mostrar el error real
+        if: failure()
+        run: |
+          echo "=== Líneas con error ==="
+          grep -n -i -E "error|unable to resolve|syntaxerror|bundling failed|hermes|cannot find|failed" /tmp/gradle.log | grep -v -E "^[0-9]+:w: |deprecated" | head -60
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
