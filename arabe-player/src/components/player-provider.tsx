@@ -2,10 +2,11 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-aud
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe';
+
 
 import { MiniPlayer } from '@/components/mini-player';
 import { NowPlaying, ytBoxRect } from '@/components/now-playing';
+import { YoutubePlayer, type YoutubeIframeRef } from '@/components/yt-player';
 import { PlayerContext, type PlayerState, type RepeatMode } from '@/components/player-context';
 import { getAudioUrl, type Track } from '@/lib/api';
 import { logError } from '@/lib/error-log';
@@ -386,8 +387,6 @@ export function PlayerProvider({
             play={ytPlay}
             onChangeState={onYtState}
             onError={onYtError}
-            initialPlayerParams={{ controls: true, preventFullScreen: false }}
-            webViewProps={{ androidLayerType: 'hardware', allowsInlineMediaPlayback: true }}
           />
         </View>
       ) : null}
