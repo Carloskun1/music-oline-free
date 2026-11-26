@@ -48,6 +48,17 @@ export function NowPlaying() {
   }, [open, close]);
 
   const track = p.current;
+  const trackId = track?.id;
+  const blocked = !!p.error && p.error.includes('fuera de YouTube');
+
+  // Canción nueva: cerrar la vista del sitio. Canción bloqueada: abrirla sola dentro de la app.
+  useEffect(() => {
+    setSite(false);
+  }, [trackId]);
+  useEffect(() => {
+    if (open && blocked && track?.source === 'youtube') setSite(true);
+  }, [open, blocked, track?.source]);
+
   if (!track || !open) return null;
   const isYt = track.source === 'youtube';
   const slot = ytBoxRect(width, 0);
@@ -206,6 +217,15 @@ export function NowPlaying() {
             <Text numberOfLines={1} style={styles.siteTitle}>
               {track.title}
             </Text>
+            <Pressable
+              onPress={() => {
+                setSite(false);
+                p.next();
+              }}
+              style={styles.headerBtn}
+              accessibilityLabel="Siguiente">
+              <Text style={styles.headerIcon}>»</Text>
+            </Pressable>
             <Pressable onPress={() => setSite(false)} style={styles.headerBtn} accessibilityLabel="Cerrar YouTube">
               <Text style={[styles.headerIcon, { fontSize: 20 }]}>✕</Text>
             </Pressable>
@@ -216,6 +236,7 @@ export function NowPlaying() {
             domStorageEnabled
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            injectedJavaScript={`(function(){var n=0;var t=setInterval(function(){var v=document.querySelector('video');if(v){try{v.play();}catch(e){}}if(++n>20)clearInterval(t);},500);})();true;`}
             style={{ flex: 1, backgroundColor: '#000' }}
           />
         </View>
