@@ -66,6 +66,7 @@ export async function searchYoutube(query: string): Promise<Track[]> {
     part: 'snippet',
     type: 'video',
     videoEmbeddable: 'true',
+    videoSyndicated: 'true',
     maxResults: '40',
     q: query,
   });

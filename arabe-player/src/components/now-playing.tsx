@@ -246,7 +246,7 @@ export function NowPlaying() {
 }
 
 const styles = StyleSheet.create({
-  screen: { ...StyleSheet.absoluteFillObject, zIndex: 50, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
+  screen: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, backgroundColor: Colors.dark.background, paddingHorizontal: 24 },
   ytHint: { color: Colors.dark.textSecondary, fontSize: 11, textAlign: 'center', marginTop: Spacing.two },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.three },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   errActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
   errBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.dark.accent },
   errBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  site: { ...StyleSheet.absoluteFillObject, zIndex: 120, backgroundColor: '#000' },
+  site: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 120, backgroundColor: '#000' },
   siteHeader: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: Colors.dark.background },
   siteTitle: { flex: 1, color: Colors.dark.text, fontWeight: '700' },
   seekArea: { height: 32, justifyContent: 'center', marginTop: Spacing.three },

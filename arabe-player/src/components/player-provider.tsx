@@ -52,6 +52,8 @@ export function PlayerProvider({
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [ytId, setYtId] = useState<string | null>(null);
   const [ytPlay, setYtPlay] = useState(false);
+  const ytFailRef = useRef(0);
+  const skipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   loadingRef.current = loading;
 
   const releasePlayer = useCallback(() => {
@@ -262,6 +264,10 @@ export function PlayerProvider({
     tokenRef.current++;
     releasePlayer();
     engineRef.current = null;
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = null;
+    }
     setYtId(null);
     setYtPlay(false);
     queueRef.current = [];
@@ -318,6 +324,7 @@ export function PlayerProvider({
 
   const onYtState = (state: string) => {
     if (state === 'playing') {
+      ytFailRef.current = 0;
       skipRef.current = 0;
       setError(null);
       setIsPlaying(true);
@@ -340,12 +347,31 @@ export function PlayerProvider({
     setLoading(false);
     setIsPlaying(false);
     // 100/101/150/152/153: el dueño del video no permite reproducirlo fuera de YouTube.
-    if (['100', '101', '150', '152', '153'].includes(e)) {
-      setError('Este video no permite reproducirse fuera de YouTube.');
-      return;
-    }
+    const blocked = ['100', '101', '150', '152', '153'].includes(e);
     logError('youtube (reproductor)', new Error(e));
-    setError('Este video no se puede reproducir aquí. Prueba otra canción.');
+    ytFailRef.current += 1;
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = null;
+    }
+    const q = queueRef.current;
+    if (q.length > 1 && ytFailRef.current < q.length) {
+      setError(
+        blocked
+          ? `"${current?.title ?? 'Este video'}" no permite reproducirse fuera de YouTube. Saltando a la siguiente…`
+          : `"${current?.title ?? 'Este video'}" no está disponible. Saltando a la siguiente…`,
+      );
+      skipTimerRef.current = setTimeout(() => {
+        skipTimerRef.current = null;
+        next(true);
+      }, 1500);
+    } else {
+      setError(
+        blocked
+          ? 'Este video no permite reproducirse fuera de YouTube. Prueba otra canción.'
+          : 'Este video no se puede reproducir aquí. Prueba otra canción.',
+      );
+    }
   };
 
   const box = ytBoxRect(screenW, insets.top);

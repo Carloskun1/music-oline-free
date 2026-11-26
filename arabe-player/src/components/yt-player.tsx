@@ -3,6 +3,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import type { ComponentType } from 'react';
+
+// WebView<P = undefined> hace que sus props resuelvan a never en TS; usamos un alias sin la generic.
+const WebViewAny = WebView as unknown as ComponentType<Record<string, unknown>>;
 
 export type YoutubeIframeRef = {
   seekTo: (seconds: number, allowSeekAhead?: boolean) => void;
@@ -54,7 +58,7 @@ setInterval(function(){ if(ready&&player&&player.getCurrentTime){ send({t:'time'
 }
 
 export const YoutubePlayer = forwardRef<YoutubeIframeRef, Props>(function YoutubePlayer(props, ref) {
-  const web = useRef<WebView>(null);
+  const web = useRef<WebView | null>(null);
   const cur = useRef(0);
   const dur = useRef(0);
   const latest = useRef(props);
@@ -116,7 +120,7 @@ export const YoutubePlayer = forwardRef<YoutubeIframeRef, Props>(function Youtub
 
   return (
     <View style={{ width: props.width, height: props.height, backgroundColor: '#000' }}>
-      <WebView
+      <WebViewAny
         ref={web}
         source={{ html, baseUrl: 'https://www.youtube.com' }}
         originWhitelist={['*']}
