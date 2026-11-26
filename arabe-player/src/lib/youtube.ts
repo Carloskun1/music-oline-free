@@ -2,7 +2,8 @@
 // La clave llega por el secreto de GitHub YOUTUBE_API_KEY (ver .github/workflows/main.yml).
 import type { Track } from '@/lib/api';
 
-const KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY ?? '';
+// Si existe el secreto de GitHub se usa ese; si no, la clave de respaldo escrita aquí.
+const KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY || 'AIzaSyB50ww-iqQ0GuD_T8UBPXKdXpuvus3NBFE';
 export const hasYoutubeKey = KEY.length > 0;
 
 const cache = new Map<string, { at: number; tracks: Track[] }>();
@@ -46,7 +47,7 @@ type VideoItem = {
 
 function toTrack(v: VideoItem): Track | null {
   const duration = parseDuration(v.contentDetails?.duration);
-  if (!v.id || duration <= 0 || duration > 20 * 60) return null; // sin directos ni mixes largos
+  if (!v.id || duration <= 0 || duration > 3 * 3600) return null; // sin directos (duración 0)
   const t = v.snippet.thumbnails;
   return {
     id: v.id,
@@ -64,9 +65,8 @@ export async function searchYoutube(query: string): Promise<Track[]> {
   const search = await yt<{ items?: { id?: { videoId?: string } }[] }>('search', {
     part: 'snippet',
     type: 'video',
-    videoCategoryId: '10',
     videoEmbeddable: 'true',
-    maxResults: '25',
+    maxResults: '40',
     q: query,
   });
   const ids = (search.items ?? []).map((i) => i.id?.videoId).filter((x): x is string => !!x);
@@ -83,14 +83,21 @@ export async function searchYoutube(query: string): Promise<Track[]> {
 export async function trendingYoutube(region = 'CO'): Promise<Track[]> {
   const hit = cache.get(`t:${region}`);
   if (hit && Date.now() - hit.at < TTL) return hit.tracks;
-  const videos = await yt<{ items?: VideoItem[] }>('videos', {
-    part: 'snippet,contentDetails',
-    chart: 'mostPopular',
-    videoCategoryId: '10',
-    regionCode: region,
-    maxResults: '30',
-  });
-  const tracks = (videos.items ?? []).map(toTrack).filter((t): t is Track => t !== null);
+  let tracks: Track[] = [];
+  try {
+    const videos = await yt<{ items?: VideoItem[] }>('videos', {
+      part: 'snippet,contentDetails',
+      chart: 'mostPopular',
+      videoCategoryId: '10',
+      regionCode: region,
+      maxResults: '30',
+    });
+    tracks = (videos.items ?? []).map(toTrack).filter((t): t is Track => t !== null);
+  } catch (e) {
+    // Si la lista de música populares no está disponible en tu región, se busca igual.
+    if (e instanceof Error && /HTTP (400|403)/.test(e.message) && /key|quota|API/i.test(e.message)) throw e;
+  }
+  if (tracks.length === 0) tracks = await searchYoutube('música popular canciones más escuchadas');
   cache.set(`t:${region}`, { at: Date.now(), tracks });
   return tracks;
 }

@@ -1,5 +1,4 @@
 // Cliente de Audius (API pública y gratuita de música). Reemplaza a Piped, que devolvía HTTP 403.
-import { logError } from '@/lib/error-log';
 import { hasYoutubeKey, searchYoutube, trendingYoutube } from '@/lib/youtube';
 
 const APP_NAME = 'arabe-player';
@@ -71,13 +70,7 @@ function toTrack(t: AudiusTrack): Track | null {
 
 // YouTube es la fuente principal. Si no hay clave o falla, se usa Audius como respaldo.
 export async function searchTracks(query: string): Promise<Track[]> {
-  if (hasYoutubeKey) {
-    try {
-      return await searchYoutube(query);
-    } catch (e) {
-      logError('youtube (búsqueda)', e);
-    }
-  }
+  if (hasYoutubeKey) return searchYoutube(query); // si falla, se muestra el motivo real
   return searchAudius(query);
 }
 
@@ -87,13 +80,7 @@ async function searchAudius(query: string): Promise<Track[]> {
 }
 
 export async function getTrending(_region?: string): Promise<Track[]> {
-  if (hasYoutubeKey) {
-    try {
-      return await trendingYoutube('CO');
-    } catch (e) {
-      logError('youtube (tendencias)', e);
-    }
-  }
+  if (hasYoutubeKey) return trendingYoutube('CO');
   const { data } = await audiusFetch<AudiusTrack[]>('/tracks/trending?limit=30');
   return (data ?? []).map(toTrack).filter((t): t is Track => t !== null);
 }
